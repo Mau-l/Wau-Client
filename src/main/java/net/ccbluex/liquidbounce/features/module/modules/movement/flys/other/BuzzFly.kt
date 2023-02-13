@@ -1,3 +1,8 @@
+/*
+ * FDPClient Hacked Client
+ * A free open source mixin-based injection hacked client for Minecraft using Minecraft Forge by LiquidBounce.
+ * https://github.com/SkidderMC/FDPClient/
+ */
 package net.ccbluex.liquidbounce.features.module.modules.movement.flys.other
 
 import net.ccbluex.liquidbounce.event.PacketEvent
@@ -13,7 +18,7 @@ import net.minecraft.network.play.client.C03PacketPlayer.C06PacketPlayerPosLook
 import net.minecraft.network.play.server.S08PacketPlayerPosLook
 import kotlin.math.sqrt
 
-class BuzzTestFly : FlyMode("BuzzTest") {
+class BuzzFly : FlyMode("Buzz") {
     private var flag = false
     private var started = false
     private var lastSentX = 0.0
@@ -26,6 +31,9 @@ class BuzzTestFly : FlyMode("BuzzTest") {
         lastSentY = mc.thePlayer.posY
         lastSentZ = mc.thePlayer.posZ
         started = false
+        MovementUtils.resetMotion(true)
+        mc.thePlayer.jumpMovementFactor = 0.00f
+        mc.thePlayer.onGround = false
         if(mc.thePlayer.onGround) {
             started = true
             mc.timer.timerSpeed = 0.2f

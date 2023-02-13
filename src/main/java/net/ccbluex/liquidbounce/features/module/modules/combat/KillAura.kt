@@ -27,6 +27,7 @@ import net.ccbluex.liquidbounce.features.value.BoolValue
 import net.ccbluex.liquidbounce.features.value.FloatValue
 import net.ccbluex.liquidbounce.features.value.IntegerValue
 import net.ccbluex.liquidbounce.features.value.ListValue
+import net.minecraft.client.gui.ScaledResolution
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.inventory.GuiContainer
 import net.minecraft.client.gui.inventory.GuiInventory
@@ -44,12 +45,10 @@ import net.minecraft.world.WorldSettings
 import org.lwjgl.input.Keyboard
 import org.lwjgl.opengl.GL11
 import org.lwjgl.util.glu.Cylinder
+import scala.annotation.switch
 import java.awt.Color
 import java.util.*
-import kotlin.math.cos
-import kotlin.math.max
-import kotlin.math.pow
-import kotlin.math.sin
+import kotlin.math.*
 
 @ModuleInfo(name = "KillAura", category = ModuleCategory.COMBAT, keyBind = Keyboard.KEY_R)
 class KillAura : Module() {
@@ -78,6 +77,7 @@ class KillAura : Module() {
 
     private val hurtTimeValue = IntegerValue("HurtTime", 10, 0, 10)
     private val combatDelayValue = BoolValue("1.9CombatDelay", false)
+    private val simulateCooldown = BoolValue("SimulateCooldown", false)
 
     // Range  
     val rangeValue = object : FloatValue("Range", 3.7f, 0f, 8f) {
@@ -111,9 +111,9 @@ class KillAura : Module() {
     private val targetModeValue = ListValue("TargetMode", arrayOf("Single", "Switch", "Multi"), "Switch")
 
     // Bypass
-    private val swingValue =            ListValue("Swing", arrayOf("Normal", "Packet", "None"), "Normal")
-    private val attackTimingValue =     ListValue("AttackTiming", arrayOf("All", "Pre", "Post"), "All")
-    private val keepSprintValue =       BoolValue("KeepSprint", true)
+    private val swingValue = ListValue("Swing", arrayOf("Normal", "Packet", "None"), "Normal")
+    private val attackTimingValue = ListValue("AttackTiming", arrayOf("All", "Pre", "Post"), "All")
+    private val keepSprintValue = BoolValue("KeepSprint", true)
 
     private val noBadPacketsValue = BoolValue("NoBadPackets", false)
 
@@ -163,48 +163,65 @@ class KillAura : Module() {
         }
     }
 
-    private val rotationSmoothModeValue =   ListValue("SmoothMode", arrayOf("Custom", "Line", "Quad", "Sine", "QuadSine"), "Custom")
-    private val rotationSmoothValue =       FloatValue("CustomSmooth", 2f, 1f, 10f).displayable { rotationSmoothModeValue.equals("Custom") }
+    private val rotationSmoothModeValue = ListValue("SmoothMode", arrayOf("Custom", "Line", "Quad", "Sine", "QuadSine"), "Custom")
+    private val rotationSmoothValue = FloatValue("CustomSmooth", 2f, 1f, 10f).displayable { rotationSmoothModeValue.equals("Custom") }
     
-    // Random
-    private val randomCenterModeValue =     ListValue("RandomCenter", arrayOf("Off", "Cubic", "Horizonal", "Vertical"), "Off")
-    private val randomCenRangeValue =       FloatValue("RandomRange", 0.0f, 0.0f, 1.2f)
+    // Random Value
+    private val randomCenterModeValue = ListValue("RandomCenter", arrayOf("Off", "Cubic", "Horizonal", "Vertical"), "Off")
+    private val randomCenRangeValue = FloatValue("RandomRange", 0.0f, 0.0f, 1.2f)
     
-    // rotation keep
-    private val rotationRevValue =          BoolValue("RotationReverse", false).displayable { !rotationModeValue.equals("None") }
-    private val rotationRevTickValue =      IntegerValue("RotationReverseTick", 5, 1, 20).displayable { !rotationModeValue.equals("None") }
-    private val keepDirectionValue =        BoolValue("KeepDirection", true).displayable { !rotationModeValue.equals("None") }
-    private val keepDirectionTickValue =    IntegerValue("KeepDirectionTick", 15, 1, 20).displayable { !rotationModeValue.equals("None") }
+    // Keep Rotate
+    private val rotationRevValue = BoolValue("RotationReverse", false).displayable { !rotationModeValue.equals("None") }
+    private val rotationRevTickValue = IntegerValue("RotationReverseTick", 5, 1, 20).displayable { !rotationModeValue.equals("None") }
+    private val keepDirectionValue = BoolValue("KeepDirection", true).displayable { !rotationModeValue.equals("None") }
+    private val keepDirectionTickValue = IntegerValue("KeepDirectionTick", 15, 1, 20).displayable { !rotationModeValue.equals("None") }
     
     // Strafe
-    private val silentRotationValue =       BoolValue("SilentRotation", true).displayable { !rotationModeValue.equals("None") }
-    private val rotationStrafeValue =       ListValue("Strafe", arrayOf("Off", "Strict", "Silent"), "Silent").displayable { silentRotationValue.get() && !rotationModeValue.equals("None") }
-    private val strafeOnlyGroundValue =     BoolValue("StrafeOnlyGround", true).displayable { rotationStrafeValue.displayable && !rotationStrafeValue.equals("Off") }
+    private val silentRotationValue = BoolValue("SilentRotation", true).displayable { !rotationModeValue.equals("None") }
+    private val rotationStrafeValue = ListValue("Strafe", arrayOf("Off", "Strict", "Silent"), "Silent").displayable { silentRotationValue.get() && !rotationModeValue.equals("None") }
+    private val strafeOnlyGroundValue = BoolValue("StrafeOnlyGround", true).displayable { rotationStrafeValue.displayable && !rotationStrafeValue.equals("Off") }
     
     // Backtrace
-    private val backtraceValue =            BoolValue("Backtrace", false)
-    private val backtraceTickValue =        IntegerValue("BacktraceTick", 2, 1, 10).displayable { backtraceValue.get() }
+    private val backtraceValue = BoolValue("Backtrace", false)
+    private val backtraceTickValue = IntegerValue("BacktraceTick", 2, 1, 10).displayable { backtraceValue.get() }
     
-    
-    private val hitableValue =              BoolValue("AlwaysHitable", true).displayable { !rotationModeValue.equals("None") }
-    private val fovValue =                  FloatValue("FOV", 180f, 0f, 180f)
+    // Others
+    private val hitAbleValue = BoolValue("AlwaysHitAble", true).displayable { !rotationModeValue.equals("None") }
+    private val fovValue = FloatValue("FOV", 180f, 0f, 180f)
 
     // Predict
     private val predictValue = BoolValue("Predict", true).displayable { !rotationModeValue.equals("None") }
 
-    private val maxPredictSizeValue: FloatValue = object : FloatValue("MaxPredictSize", 1f, 0.1f, 5f) {
+    private val maxPredictSizeValue: FloatValue = object : FloatValue("MaxPredictSize", 1f, -2f, 5f) {
         override fun onChanged(oldValue: Float, newValue: Float) {
             val v = minPredictSizeValue.get()
             if (v > newValue) set(v)
         }
     }.displayable { predictValue.displayable && predictValue.get() } as FloatValue
 
-    private val minPredictSizeValue: FloatValue = object : FloatValue("MinPredictSize", 1f, 0.1f, 5f) {
+    private val minPredictSizeValue: FloatValue = object : FloatValue("MinPredictSize", 1f, -2f, 5f) {
         override fun onChanged(oldValue: Float, newValue: Float) {
             val v = maxPredictSizeValue.get()
             if (v < newValue) set(v)
         }
     }.displayable { predictValue.displayable && predictValue.get() } as FloatValue
+    
+    
+    private val predictPlayerValue = BoolValue("PredictPlayer", true).displayable { !rotationModeValue.equals("None") }
+    
+    private val maxPredictPlayerSizeValue: FloatValue = object : FloatValue("MaxPredictPlayerSize", 1f, -1f, 3f) {
+        override fun onChanged(oldValue: Float, newValue: Float) {
+            val v = minPredictPlayerSizeValue.get()
+            if (v > newValue) set(v)
+        }
+    }.displayable { predictPlayerValue.displayable && predictPlayerValue.get() } as FloatValue
+
+    private val minPredictPlayerSizeValue: FloatValue = object : FloatValue("MinPredictPlayerSize", 1f, -1f, 3f) {
+        override fun onChanged(oldValue: Float, newValue: Float) {
+            val v = maxPredictPlayerSizeValue.get()
+            if (v < newValue) set(v)
+        }
+    }.displayable { predictPlayerValue.displayable && predictPlayerValue.get() } as FloatValue
 
     // Bypass
     private val failRateValue = FloatValue("FailRate", 0f, 0f, 100f)
@@ -266,11 +283,13 @@ class KillAura : Module() {
         get() = blockingStatus || (autoBlockValue.equals("Fake") && canFakeBlock)
 
     private var predictAmount = 1.0f
+    private var predictPlayerAmount = 1.0f
 
     private val getAABB: ((Entity) -> AxisAlignedBB) = {
         var aabb = it.entityBoundingBox
         aabb = if (backtraceValue.get()) LocationCache.getPreviousAABB(it.entityId, backtraceTickValue.get(), aabb) else aabb
         aabb = if (predictValue.get()) aabb.offset((it.posX - it.lastTickPosX) * predictAmount, (it.posY - it.lastTickPosY) * predictAmount, (it.posZ - it.lastTickPosZ) * predictAmount) else aabb
+        aabb = if (predictPlayerValue.get()) aabb.offset(mc.thePlayer.motionX * predictPlayerAmount * -1f, mc.thePlayer.motionY * predictPlayerAmount * -1f, mc.thePlayer.motionZ * predictPlayerAmount * -1f) else aabb
         aabb
     }
 
@@ -463,19 +482,15 @@ class KillAura : Module() {
         }
 
         LiquidBounce.moduleManager[TargetStrafe::class.java]!!.targetEntity = currentTarget?:return
-        LiquidBounce.moduleManager[TargetStrafe::class.java]!!.doStrafe = LiquidBounce.moduleManager[TargetStrafe::class.java]!!.toggleStrafe()
+//        LiquidBounce.moduleManager[TargetStrafe::class.java]!!.doStrafe = LiquidBounce.moduleManager[TargetStrafe::class.java]!!.toggleStrafe()
     }
 
     /**
      * Update event
      */
     @EventTarget
-    fun onUpdate() {
-        if ((!strafeOnlyGroundValue.get() || mc.thePlayer.onGround) && !rotationStrafeValue.equals("Off") && !mc.thePlayer.isRiding) {
-            strictStrafe = true
-        }else {
-            strictStrafe = false
-        }
+    fun onUpdate(e: UpdateEvent) {
+        strictStrafe = (!strafeOnlyGroundValue.get() || mc.thePlayer.onGround) && !rotationStrafeValue.equals("Off") && !mc.thePlayer.isRiding
         if (cancelRun) {
             target = null
             currentTarget = null
@@ -506,6 +521,11 @@ class KillAura : Module() {
 
         if (attackTimingValue.equals("All")) {
             runAttackLoop()
+        }
+        
+        if (simulateCooldown.get() && CooldownHelper.getAttackCooldownProgress() < 1.0f) {
+            
+            return
         }
     }
 
@@ -1002,15 +1022,12 @@ class KillAura : Module() {
      * @throws IllegalStateException when bad packets protection
      */
     private fun attackEntity(entity: EntityLivingBase) {
-        if (packetSent && noBadPacketsValue.get()) {
-            throw java.lang.IllegalStateException("Attack canceled because of bad packets protection")
-        }
+        if (packetSent && noBadPacketsValue.get()) return
+
         // Call attack event
         val event = AttackEvent(entity)
         LiquidBounce.eventManager.callEvent(event)
-        if (event.isCancelled) {
-            return
-        }
+        if (event.isCancelled) return
 
         // Stop blocking
         if (!autoBlockPacketValue.equals("Vanilla") && (mc.thePlayer.isBlocking || blockingStatus)) {
@@ -1046,6 +1063,8 @@ class KillAura : Module() {
         ) {
             startBlocking(entity, interactAutoBlockValue.get())
         }
+        
+        CooldownHelper.resetLastAttackedTicks()
     }
 
     /**
@@ -1058,6 +1077,9 @@ class KillAura : Module() {
 
         if (predictValue.get()) {
             predictAmount = RandomUtils.nextFloat(maxPredictSizeValue.get(), minPredictSizeValue.get())
+        }
+        if (predictPlayerValue.get()) {
+            predictPlayerAmount = RandomUtils.nextFloat(maxPredictPlayerSizeValue.get(), minPredictPlayerSizeValue.get())
         }
 
         val boundingBox = if (rotationModeValue.get() == "Test") entity.entityBoundingBox else getAABB(entity)
@@ -1148,7 +1170,7 @@ class KillAura : Module() {
      * Check if enemy is hitable with current rotations
      */
     private fun updateHitable() {
-        if (hitableValue.get()) {
+        if (hitAbleValue.get()) {
             hitable = true
             return
         }
@@ -1201,7 +1223,28 @@ class KillAura : Module() {
         }
 
         if (interact) {
-            mc.netHandler.addToSendQueue(C02PacketUseEntity(interactEntity, interactEntity.positionVector))
+            //mc.netHandler.addToSendQueue(C02PacketUseEntity(interactEntity, interactEntity.positionVector))
+            val positionEye = mc.renderViewEntity?.getPositionEyes(1F)
+
+            val expandSize = interactEntity.collisionBorderSize.toDouble()
+            val boundingBox = interactEntity.entityBoundingBox.expand(expandSize, expandSize, expandSize)
+
+            val (yaw, pitch) = RotationUtils.targetRotation ?: Rotation(mc.thePlayer!!.rotationYaw, mc.thePlayer!!.rotationPitch)
+            val yawCos = cos(-yaw * 0.017453292F - Math.PI.toFloat())
+            val yawSin = sin(-yaw * 0.017453292F - Math.PI.toFloat())
+            val pitchCos = -cos(-pitch * 0.017453292F)
+            val pitchSin = sin(-pitch * 0.017453292F)
+            val range = min(maxRange.toDouble(), mc.thePlayer!!.getDistanceToEntityBox(interactEntity)) + 1
+            val lookAt = positionEye!!.addVector(yawSin * pitchCos * range, pitchSin * range, yawCos * pitchCos * range)
+
+            val movingObject = boundingBox.calculateIntercept(positionEye, lookAt) ?: return
+            val hitVec = movingObject.hitVec
+
+            mc.netHandler.addToSendQueue(C02PacketUseEntity(interactEntity, Vec3(
+                    hitVec.xCoord - interactEntity.posX,
+                    hitVec.yCoord - interactEntity.posY,
+                    hitVec.zCoord - interactEntity.posZ)
+            ))
             mc.netHandler.addToSendQueue(C02PacketUseEntity(interactEntity, C02PacketUseEntity.Action.INTERACT))
         }
 
